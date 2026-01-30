@@ -48,6 +48,7 @@ class Supervisor:
     # Configuration
     pe_window: int = 100
     pe_lambda_threshold: float = 0.1
+    pe_condition_threshold: float = 100.0
     ntheta: int = 2
     mode_config: ModeConfig = field(default_factory=ModeConfig)
     solver_failure_escalation_threshold: int = 5  # Escalate after N consecutive failures
@@ -63,6 +64,7 @@ class Supervisor:
         self._pe_monitor = PEMonitor(
             window=self.pe_window,
             lambda_threshold=self.pe_lambda_threshold,
+            condition_threshold=self.pe_condition_threshold,
             ntheta=self.ntheta,
         )
         self._mode_manager = ModeManager(config=self.mode_config)
@@ -246,6 +248,7 @@ def create_supervisor(
     ntheta: int = 2,
     pe_window: int = 100,
     pe_threshold: float = 0.1,
+    pe_condition_threshold: float = 100.0,
     solver_failure_threshold: int = 5,
     **mode_kwargs: Any,
 ) -> Supervisor:
@@ -255,6 +258,7 @@ def create_supervisor(
         ntheta: Number of parameters
         pe_window: Rolling window for PE monitoring
         pe_threshold: Minimum eigenvalue threshold for PE
+        pe_condition_threshold: Maximum FIM condition number for PE
         solver_failure_threshold: Consecutive failures before mode escalation
         **mode_kwargs: Additional arguments for ModeConfig
 
@@ -266,6 +270,7 @@ def create_supervisor(
     return Supervisor(
         pe_window=pe_window,
         pe_lambda_threshold=pe_threshold,
+        pe_condition_threshold=pe_condition_threshold,
         ntheta=ntheta,
         mode_config=mode_config,
         solver_failure_escalation_threshold=solver_failure_threshold,

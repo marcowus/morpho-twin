@@ -165,8 +165,8 @@ class AcadosMHE(MHEBase):
 
         # Get data
         y_data = np.array(self._y_buffer[-min(n_meas, N + 1) :]).reshape(-1, 1)
-        # Skip initial dummy input at index 0, take inputs aligned with measurements
-        u_data = np.array(self._u_buffer[1 : N + 1]).reshape(-1, 1)
+        # Take inputs aligned with transitions: u_k caused transition y_k -> y_{k+1}
+        u_data = np.array(self._u_buffer[0:N]).reshape(-1, 1)
 
         # Pad if needed
         while len(y_data) < N + 1:

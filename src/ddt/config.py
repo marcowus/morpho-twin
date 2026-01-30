@@ -125,7 +125,6 @@ class NMPCConfig(BaseModel):
         default="d_optimal",
         description="FIM criterion: 'd_optimal' (recommended), 'a_optimal', or 'e_optimal'.",
     )
-    solver_backend: str = Field(default="casadi", description="'acados' or 'casadi'.")
     max_iter: int = Field(default=50, description="Max solver iterations (1 for RTI).")
     rti_mode: bool = Field(default=True, description="Use RTI scheme for acados.")
 

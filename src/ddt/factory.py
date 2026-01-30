@@ -290,6 +290,7 @@ def make_supervisor(cfg: AppConfig) -> Supervisor | None:
     return Supervisor(
         pe_window=pe_cfg.window,
         pe_lambda_threshold=pe_cfg.lambda_threshold,
+        pe_condition_threshold=pe_cfg.condition_threshold,
         ntheta=2,
         mode_config=mode_manager_config,
     )
