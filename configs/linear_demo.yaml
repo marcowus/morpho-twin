@@ -1,0 +1,38 @@
+# Minimal demo config: scalar linear plant + PID + safety filter.
+seed: 0
+dt: 0.1
+horizon_steps: 20
+
+plant:
+  type: linear_scalar
+  a_true: 1.02
+  b_true: 0.10
+  process_noise_std: 0.00
+  meas_noise_std: 0.01
+  x0: 0.0
+
+estimation:
+  type: windowed_ls
+  window: 50
+
+control:
+  type: pid
+  kp: 4.0
+  ki: 0.2
+  kd: 0.0
+  u_min: -2.0
+  u_max: 2.0
+
+safety:
+  type: state_box
+  x_min: -1.0
+  x_max: 1.0
+  alpha: 0.05      # discrete-time barrier contraction
+  slack_weight: 1000.0
+
+scenario:
+  steps: 400
+  reference:
+    type: step
+    t_step: 5.0
+    value: 0.8
