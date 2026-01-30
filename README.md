@@ -31,12 +31,12 @@ pip install -e ".[acados]"  # acados for production MHE/NMPC
 
 ```bash
 # Run simulation with full stack
-morpho simulate --config configs/full_demo.yaml
+morpho --config configs/full_demo.yaml
 
 # Run with specific components
-morpho simulate --config configs/linear_demo.yaml   # PID + windowed LS
-morpho simulate --config configs/mhe_demo.yaml      # MHE + PID
-morpho simulate --config configs/nmpc_demo.yaml     # NMPC/RTI
+morpho --config configs/linear_demo.yaml   # PID + windowed LS
+morpho --config configs/mhe_demo.yaml      # MHE + PID
+morpho --config configs/nmpc_demo.yaml     # NMPC/RTI
 ```
 
 ## Architecture
