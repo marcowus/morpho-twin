@@ -11,3 +11,6 @@ build/
 coverage.xml
 htmlcov/
 .ddt_logs/
+
+AGENTS.md
+CLAUDE.md

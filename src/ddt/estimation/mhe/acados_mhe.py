@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
+from loguru import logger
 
 try:
     import casadi as ca
@@ -18,6 +19,7 @@ except ImportError:
     ACADOS_AVAILABLE = False
     ca = None  # type: ignore[assignment]
 
+from ...events import ComponentType, FailureSeverity, SolverFailureEvent
 from .base import MHEBase
 from .covariance import compute_fim_from_trajectory, estimate_covariance_from_fim
 from .model import build_linear_scalar_model
@@ -37,6 +39,7 @@ class AcadosMHE(MHEBase):
     _acados_solver: AcadosOcpSolver | None = field(default=None, init=False)
     _acados_model: AcadosModel | None = field(default=None, init=False)
     _code_export_dir: Path = field(init=False)
+    _consecutive_failures: int = field(default=0, init=False)
 
     def __post_init__(self) -> None:
         if not ACADOS_AVAILABLE:
@@ -142,7 +145,9 @@ class AcadosMHE(MHEBase):
 
         return model
 
-    def _solve_mhe(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _solve_mhe(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, SolverFailureEvent | None]:
         """Solve the MHE optimization problem using acados."""
         N = self.cfg.horizon
         nx = self.nx
@@ -155,6 +160,7 @@ class AcadosMHE(MHEBase):
                 np.zeros((N + 1, nx)),
                 self._theta_hat.copy(),
                 self._theta_cov.copy(),
+                None,
             )
 
         # Get data
@@ -189,12 +195,32 @@ class AcadosMHE(MHEBase):
         status = solver.solve()
 
         if status != 0:
-            # Solver failed, return previous estimate
+            # Solver failed
+            self._consecutive_failures += 1
+
+            event = SolverFailureEvent(
+                component=ComponentType.MHE_ACADOS,
+                severity=FailureSeverity.WARNING,
+                message=f"MHE-acados solver failed with status {status}",
+                solver_status=str(status),
+                fallback_action="use_previous_estimate",
+            )
+
+            logger.warning(
+                "MHE-acados solver failed | status={} | consecutive={}",
+                status,
+                self._consecutive_failures,
+            )
+
             return (
                 self._x_traj.copy(),
                 self._theta_hat.copy(),
                 self._theta_cov.copy(),
+                event,
             )
+
+        # Success - reset consecutive failures
+        self._consecutive_failures = 0
 
         # Extract solution
         x_opt = np.zeros((N + 1, nx))
@@ -217,7 +243,12 @@ class AcadosMHE(MHEBase):
         )
         cov = estimate_covariance_from_fim(fim, self._theta_cov)
 
-        return x_opt, theta_opt, cov
+        return x_opt, theta_opt, cov, None
+
+    @property
+    def consecutive_failures(self) -> int:
+        """Get count of consecutive failures."""
+        return self._consecutive_failures
 
     def _estimate_parameters_ls(
         self,

@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import numpy as np
+from loguru import logger
 
 try:
     import casadi as ca
 except ImportError:
     ca = None  # type: ignore[assignment]
 
+from ...events import ComponentType, FailureSeverity, SolverFailureEvent
 from .base import MHEBase
 from .covariance import compute_fim_from_trajectory, estimate_covariance_from_fim
 from .model import SymbolicModel, build_linear_scalar_model
@@ -31,6 +34,8 @@ class CasADiMHE(MHEBase):
     _model: SymbolicModel = field(init=False)
     _nlp_solver: ca.Function | None = field(default=None, init=False)
     _w_opt_prev: np.ndarray | None = field(default=None, init=False)
+    _consecutive_failures: int = field(default=0, init=False)
+    _last_failure_event: SolverFailureEvent | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
         if ca is None:
@@ -176,8 +181,14 @@ class CasADiMHE(MHEBase):
         self._ubg = ubg
         self._w_idx = w_idx
 
-    def _solve_mhe(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Solve the MHE optimization problem."""
+    def _solve_mhe(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, SolverFailureEvent | None]:
+        """Solve the MHE optimization problem.
+
+        Returns:
+            Tuple of (x_trajectory, theta_hat, theta_cov, failure_event)
+        """
         N = self.cfg.horizon
         nx = self.nx
         nu = self.nu
@@ -194,6 +205,7 @@ class CasADiMHE(MHEBase):
                 np.zeros((N + 1, nx)),
                 self._theta_hat.copy(),
                 self._theta_cov.copy(),
+                None,
             )
 
         # Pad buffers to full horizon if needed
@@ -257,6 +269,51 @@ class CasADiMHE(MHEBase):
             p=p_arr,
         )
 
+        # CHECK CONVERGENCE - this was previously missing!
+        stats = self._nlp_solver.stats()
+        return_status = stats.get("return_status", "unknown")
+        success = return_status == "Solve_Succeeded"
+
+        failure_event: SolverFailureEvent | None = None
+
+        if not success:
+            self._consecutive_failures += 1
+
+            failure_event = SolverFailureEvent(
+                component=ComponentType.MHE_CASADI,
+                severity=FailureSeverity.WARNING,
+                message=f"MHE solver did not converge: {return_status}",
+                solver_status=str(return_status),
+                fallback_action="use_previous_estimate",
+                iteration_count=stats.get("iter_count"),
+            )
+
+            logger.warning(
+                "MHE-CasADi solver failed | status={} | consecutive={}",
+                return_status,
+                self._consecutive_failures,
+            )
+
+            # Return previous estimates as fallback
+            if self._x_traj is not None:
+                return (
+                    self._x_traj.copy(),
+                    self._theta_hat.copy(),
+                    self._theta_cov.copy(),
+                    failure_event,
+                )
+            else:
+                # No previous estimate, return zeros/priors
+                return (
+                    np.zeros((N + 1, nx)),
+                    self._theta_hat.copy(),
+                    self._theta_cov.copy(),
+                    failure_event,
+                )
+
+        # Success - reset consecutive failures
+        self._consecutive_failures = 0
+
         w_opt = np.array(sol["x"]).flatten()
         self._w_opt_prev = w_opt
 
@@ -298,4 +355,13 @@ class CasADiMHE(MHEBase):
                 theta=theta_opt,
             )
 
-        return x_opt, theta_opt, cov
+        return x_opt, theta_opt, cov, failure_event
+
+    def get_last_failure(self) -> SolverFailureEvent | None:
+        """Get the last failure event, if any."""
+        return self._last_failure_event
+
+    @property
+    def consecutive_failures(self) -> int:
+        """Get count of consecutive failures."""
+        return self._consecutive_failures

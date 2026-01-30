@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+from loguru import logger
 
+from ..estimation.innovation_monitor import UncertaintyValidation
+from ..events import FailureSeverity, SolverFailureEvent
 from .mode_manager import ModeConfig, ModeManager, OperationMode
 from .pe_monitor import PEMonitor, PEStatus
 
@@ -22,6 +26,10 @@ class SupervisorState:
     pe_status: PEStatus
     safety_margin_factor: float
     uncertainty_norm: float
+    solver_failure_count: int = 0
+    recent_failures: tuple[SolverFailureEvent, ...] = ()
+    nis_margin_multiplier: float = 1.0
+    uncertainty_validation: UncertaintyValidation | None = None
 
 
 @dataclass
@@ -42,11 +50,14 @@ class Supervisor:
     pe_lambda_threshold: float = 0.1
     ntheta: int = 2
     mode_config: ModeConfig = field(default_factory=ModeConfig)
+    solver_failure_escalation_threshold: int = 5  # Escalate after N consecutive failures
 
     # Components
     _pe_monitor: PEMonitor = field(init=False)
     _mode_manager: ModeManager = field(init=False)
     _last_state: SupervisorState | None = field(default=None, init=False)
+    _solver_failure_count: int = field(default=0, init=False)
+    _recent_failures: list[SolverFailureEvent] = field(default_factory=list, init=False)
 
     def __post_init__(self) -> None:
         self._pe_monitor = PEMonitor(
@@ -61,11 +72,15 @@ class Supervisor:
         self._pe_monitor.reset()
         self._mode_manager.reset()
         self._last_state = None
+        self._solver_failure_count = 0
+        self._recent_failures.clear()
 
     def update(
         self,
         estimate: Estimate,
         regressor: np.ndarray | None = None,
+        solver_events: list[SolverFailureEvent] | None = None,
+        uncertainty_validation: UncertaintyValidation | None = None,
     ) -> SupervisorState:
         """Update supervisor with new estimation data.
 
@@ -73,10 +88,17 @@ class Supervisor:
             estimate: Current state and parameter estimate
             regressor: Optional regressor for PE monitoring
                 If None, uses default [x_hat, 1] for scalar systems
+            solver_events: Optional list of solver failure events from this step
+            uncertainty_validation: Optional NIS-based uncertainty validation result
 
         Returns:
             Current supervisor state
         """
+        # Process solver failure events
+        if solver_events:
+            for event in solver_events:
+                self.report_solver_failure(event)
+
         # Compute uncertainty norm
         theta_cov = np.atleast_2d(estimate.theta_cov)
         uncertainty_norm = float(np.trace(theta_cov))
@@ -85,8 +107,6 @@ class Supervisor:
         if regressor is None:
             # Default regressor for linear scalar system (suboptimal - uses [x, 1])
             # For proper PE monitoring, pass regressor=[x_hat, u_safe] explicitly
-            import warnings
-
             warnings.warn(
                 "No regressor provided to supervisor. Using [x, 1] which does not "
                 "properly monitor control excitation. Pass regressor=[x_hat, u_safe] "
@@ -104,16 +124,80 @@ class Supervisor:
             is_pe_satisfied=pe_status.is_pe_satisfied,
         )
 
+        # NIS-based margin adjustment
+        nis_multiplier = 1.0
+        if uncertainty_validation is not None and not uncertainty_validation.is_valid:
+            nis_multiplier = uncertainty_validation.recommended_margin_multiplier
+            if uncertainty_validation.warning_message:
+                warnings.warn(uncertainty_validation.warning_message, RuntimeWarning, stacklevel=2)
+
+        # Combine mode margin with NIS multiplier
+        combined_margin = self._mode_manager.safety_margin_factor * nis_multiplier
+
         # Build state snapshot
         state = SupervisorState(
             mode=mode,
             pe_status=pe_status,
-            safety_margin_factor=self._mode_manager.safety_margin_factor,
+            safety_margin_factor=combined_margin,
             uncertainty_norm=uncertainty_norm,
+            solver_failure_count=self._solver_failure_count,
+            recent_failures=tuple(self._recent_failures[-5:]),  # Keep last 5
+            nis_margin_multiplier=nis_multiplier,
+            uncertainty_validation=uncertainty_validation,
         )
 
         self._last_state = state
         return state
+
+    def report_solver_failure(self, event: SolverFailureEvent) -> None:
+        """Report a solver failure event.
+
+        Handles escalation based on severity and accumulated failures.
+
+        Args:
+            event: The failure event to report
+        """
+        self._solver_failure_count += 1
+        self._recent_failures.append(event)
+
+        # Keep only recent failures (last 10)
+        if len(self._recent_failures) > 10:
+            self._recent_failures.pop(0)
+
+        # CBF failures are CRITICAL - immediate escalation to SAFE_STOP
+        if event.severity == FailureSeverity.CRITICAL:
+            logger.error(
+                "CRITICAL failure from {} - triggering safe stop | message={}",
+                event.component.name,
+                event.message,
+            )
+            self.trigger_safe_stop()
+            return
+
+        # Accumulating failures trigger mode escalation
+        if self._solver_failure_count >= self.solver_failure_escalation_threshold:
+            current_mode = self._mode_manager.mode
+
+            if current_mode == OperationMode.NORMAL:
+                logger.warning(
+                    "Solver failures exceeded threshold ({}) - escalating to CONSERVATIVE",
+                    self._solver_failure_count,
+                )
+                self._mode_manager.trigger_conservative()
+            elif current_mode == OperationMode.CONSERVATIVE:
+                logger.error(
+                    "Solver failures exceeded threshold ({}) in CONSERVATIVE mode "
+                    "- escalating to SAFE_STOP",
+                    self._solver_failure_count,
+                )
+                self.trigger_safe_stop()
+
+    def clear_failure_count(self) -> None:
+        """Clear the accumulated failure count.
+
+        Call this after successful recovery or manual intervention.
+        """
+        self._solver_failure_count = 0
 
     def get_state(self) -> SupervisorState | None:
         """Get last supervisor state."""
@@ -162,6 +246,7 @@ def create_supervisor(
     ntheta: int = 2,
     pe_window: int = 100,
     pe_threshold: float = 0.1,
+    solver_failure_threshold: int = 5,
     **mode_kwargs: Any,
 ) -> Supervisor:
     """Factory function for creating a supervisor.
@@ -170,6 +255,7 @@ def create_supervisor(
         ntheta: Number of parameters
         pe_window: Rolling window for PE monitoring
         pe_threshold: Minimum eigenvalue threshold for PE
+        solver_failure_threshold: Consecutive failures before mode escalation
         **mode_kwargs: Additional arguments for ModeConfig
 
     Returns:
@@ -182,4 +268,5 @@ def create_supervisor(
         pe_lambda_threshold=pe_threshold,
         ntheta=ntheta,
         mode_config=mode_config,
+        solver_failure_escalation_threshold=solver_failure_threshold,
     )

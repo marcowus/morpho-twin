@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import numpy as np
+from loguru import logger
 
 try:
     import osqp
@@ -15,6 +17,7 @@ try:
 except ImportError:
     OSQP_AVAILABLE = False
 
+from ..events import ComponentType, FailureSeverity, SolverFailureEvent
 from ..interfaces import Estimate, SafetyFilter
 from .barriers import CompositeBarrier, create_box_barriers
 from .robust_margin import adaptive_alpha, compute_robust_margin
@@ -62,6 +65,8 @@ class CBFQPSafetyFilter(SafetyFilter):
     _barrier: CompositeBarrier | None = field(default=None, init=False)
     _qp_solver: osqp.OSQP | None = field(default=None, init=False)
     _qp_initialized: bool = field(default=False, init=False)
+    _consecutive_failures: int = field(default=0, init=False)
+    _last_failure_event: SolverFailureEvent | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
         if not OSQP_AVAILABLE:
@@ -77,6 +82,8 @@ class CBFQPSafetyFilter(SafetyFilter):
         """Reset filter state."""
         self._qp_initialized = False
         self._qp_solver = None
+        self._consecutive_failures = 0
+        self._last_failure_event = None
 
     def set_margin_factor(self, factor: float) -> None:
         """Set margin factor from supervisor mode.
@@ -99,15 +106,40 @@ class CBFQPSafetyFilter(SafetyFilter):
         Returns:
             Safe control input u_safe
         """
+        u_safe, _ = self.filter_with_event(u_nom, est)
+        return u_safe
+
+    def filter_with_event(
+        self, u_nom: np.ndarray, est: Estimate
+    ) -> tuple[np.ndarray, SolverFailureEvent | None]:
+        """Filter nominal input and report any failures.
+
+        Args:
+            u_nom: Nominal control input from controller
+            est: Current state and parameter estimate
+
+        Returns:
+            Tuple of (safe control input, failure event if any)
+        """
         u_nom = np.atleast_1d(np.asarray(u_nom, dtype=np.float64))
         x = np.atleast_1d(np.asarray(est.x_hat, dtype=np.float64))
         theta = np.atleast_1d(np.asarray(est.theta_hat, dtype=np.float64))
         theta_cov = np.atleast_2d(np.asarray(est.theta_cov, dtype=np.float64))
 
         # Build and solve QP
-        u_safe = self._solve_cbf_qp(u_nom, x, theta, theta_cov)
+        u_safe, event = self._solve_cbf_qp(u_nom, x, theta, theta_cov)
+        self._last_failure_event = event
 
-        return u_safe
+        return u_safe, event
+
+    def get_last_failure(self) -> SolverFailureEvent | None:
+        """Get the last failure event, if any."""
+        return self._last_failure_event
+
+    @property
+    def consecutive_failures(self) -> int:
+        """Get count of consecutive failures."""
+        return self._consecutive_failures
 
     def _solve_cbf_qp(
         self,
@@ -115,13 +147,16 @@ class CBFQPSafetyFilter(SafetyFilter):
         x: np.ndarray,
         theta: np.ndarray,
         theta_cov: np.ndarray,
-    ) -> np.ndarray:
+    ) -> tuple[np.ndarray, SolverFailureEvent | None]:
         """Solve the CBF-QP.
 
         Decision variable: z = [u; δ] where δ is slack
 
         min  0.5 * z' P z + q' z
         s.t. l <= A z <= u
+
+        Returns:
+            Tuple of (safe input, failure event if any)
         """
         nu = self.nu
         n_slack = 1  # One slack variable
@@ -243,20 +278,51 @@ class CBFQPSafetyFilter(SafetyFilter):
         result = self._qp_solver.solve()
 
         if result.info.status != "solved":
+            # CBF-QP failure is CRITICAL - safety cannot be guaranteed
+            self._consecutive_failures += 1
+
+            event = SolverFailureEvent(
+                component=ComponentType.CBF_QP,
+                severity=FailureSeverity.CRITICAL,
+                message=f"CBF-QP infeasible after {self._consecutive_failures} consecutive failures",
+                solver_status=str(result.info.status),
+                fallback_action="clamp_to_bounds",
+                iteration_count=int(result.info.iter) if result.info.iter else None,
+            )
+
+            logger.error(
+                "CBF-QP solver failed | status={} | consecutive={}",
+                result.info.status,
+                self._consecutive_failures,
+            )
+
+            # Emit warning for user visibility
+            warnings.warn(
+                f"CBF-QP infeasible: {result.info.status}. "
+                f"Safety cannot be guaranteed. Falling back to clamped input.",
+                RuntimeWarning,
+                stacklevel=3,
+            )
+
             # Fallback: clamp to input bounds
             fallback: np.ndarray = np.clip(u_nom, self.u_min, self.u_max)
-            return fallback
+            return fallback, event
+
+        # Success - reset consecutive failures
+        self._consecutive_failures = 0
 
         u_safe = result.x[:nu]
         slack = result.x[nu:]
 
-        # Warn if significant slack used
+        # Warn if significant slack used (barrier constraint relaxed)
         if np.max(slack) > 0.01:
-            # Could log this for monitoring
-            pass
+            logger.warning(
+                "CBF-QP used significant slack | slack={:.4f}",
+                float(np.max(slack)),
+            )
 
         u_result: np.ndarray = u_safe
-        return u_result
+        return u_result, None
 
     def get_barrier_value(self, x: np.ndarray) -> float:
         """Get current barrier function value."""

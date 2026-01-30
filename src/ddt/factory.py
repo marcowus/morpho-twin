@@ -11,6 +11,7 @@ from .config import AppConfig
 from .estimation.windowed_ls import WindowedLeastSquaresEstimator
 from .interfaces import Controller, Estimator, Plant, SafetyFilter
 from .safety.state_box import StateBoxSafetyFilter
+from .sim.cstr import CSTRPlant
 from .sim.linear_scalar import LinearScalarPlant
 
 if TYPE_CHECKING:
@@ -31,6 +32,56 @@ def make_plant(cfg: AppConfig) -> Plant:
         )
         plant.seed(cfg.seed)
         return plant
+
+    elif cfg.plant.type == "cstr":
+        # CSTR plant with optional parameter overrides
+        plant_cfg = cfg.plant
+        cstr_kwargs: dict = {"dt": cfg.dt}
+
+        # Physical parameters (optional overrides)
+        if hasattr(plant_cfg, "V") and plant_cfg.V is not None:
+            cstr_kwargs["V"] = plant_cfg.V
+        if hasattr(plant_cfg, "rho") and plant_cfg.rho is not None:
+            cstr_kwargs["rho"] = plant_cfg.rho
+        if hasattr(plant_cfg, "C_p") and plant_cfg.C_p is not None:
+            cstr_kwargs["C_p"] = plant_cfg.C_p
+        if hasattr(plant_cfg, "R_gas") and plant_cfg.R_gas is not None:
+            cstr_kwargs["R_gas"] = plant_cfg.R_gas
+        if hasattr(plant_cfg, "C_A0") and plant_cfg.C_A0 is not None:
+            cstr_kwargs["C_A0"] = plant_cfg.C_A0
+        if hasattr(plant_cfg, "T_0") and plant_cfg.T_0 is not None:
+            cstr_kwargs["T_0"] = plant_cfg.T_0
+
+        # Uncertain parameters
+        if hasattr(plant_cfg, "k_0_true") and plant_cfg.k_0_true is not None:
+            cstr_kwargs["k_0_true"] = plant_cfg.k_0_true
+        if hasattr(plant_cfg, "E_a_true") and plant_cfg.E_a_true is not None:
+            cstr_kwargs["E_a_true"] = plant_cfg.E_a_true
+        if hasattr(plant_cfg, "dH_r_true") and plant_cfg.dH_r_true is not None:
+            cstr_kwargs["dH_r_true"] = plant_cfg.dH_r_true
+
+        # Constraints
+        if hasattr(plant_cfg, "T_max") and plant_cfg.T_max is not None:
+            cstr_kwargs["T_max"] = plant_cfg.T_max
+        if hasattr(plant_cfg, "T_min") and plant_cfg.T_min is not None:
+            cstr_kwargs["T_min"] = plant_cfg.T_min
+
+        # Noise (can be list)
+        if plant_cfg.process_noise_std is not None:
+            cstr_kwargs["process_noise_std"] = np.atleast_1d(plant_cfg.process_noise_std)
+        if plant_cfg.meas_noise_std is not None:
+            cstr_kwargs["meas_noise_std"] = np.atleast_1d(plant_cfg.meas_noise_std)
+
+        # Initial conditions
+        if hasattr(plant_cfg, "C_A_init") and plant_cfg.C_A_init is not None:
+            cstr_kwargs["C_A_init"] = plant_cfg.C_A_init
+        if hasattr(plant_cfg, "T_init") and plant_cfg.T_init is not None:
+            cstr_kwargs["T_init"] = plant_cfg.T_init
+
+        plant = CSTRPlant(**cstr_kwargs)
+        plant.seed(cfg.seed)
+        return plant
+
     raise ValueError(f"Unknown plant type: {cfg.plant.type}")
 
 

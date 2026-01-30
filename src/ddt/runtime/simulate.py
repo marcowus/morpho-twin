@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from loguru import logger
 
+from ..events import SolverFailureEvent
 from ..interfaces import Controller, Estimator, Plant, SafetyFilter
 
 if TYPE_CHECKING:
@@ -45,6 +46,7 @@ class SupervisedSimulationLog(SimulationLog):
     pe_lambda_min: list[float] = field(default_factory=list)
     uncertainty: list[float] = field(default_factory=list)
     safety_margin: list[float] = field(default_factory=list)
+    solver_failures: list[SolverFailureEvent] = field(default_factory=list)
 
 
 def run_closed_loop(
@@ -160,6 +162,9 @@ def run_supervised_loop(
     for _k in range(steps):
         r = step_reference_fn(reference_cfg, t)
 
+        # Collect events from this step
+        events: list[SolverFailureEvent] = []
+
         # Compute control
         if not supervisor.is_safe_to_operate():
             # SAFE_STOP mode: apply zero control
@@ -169,11 +174,24 @@ def run_supervised_loop(
         else:
             # Normal operation
             u_nom = controller.compute_u(np.array([r]), est)
-            u_safe = safety.filter(u_nom, est)
+
+            # Check for controller failure
+            if hasattr(controller, "get_last_failure"):
+                ctrl_event = controller.get_last_failure()
+                if ctrl_event is not None:
+                    events.append(ctrl_event)
+
+            # Safety filter with event reporting
+            if hasattr(safety, "filter_with_event"):
+                u_safe, safety_event = safety.filter_with_event(u_nom, est)
+                if safety_event is not None:
+                    events.append(safety_event)
+            else:
+                u_safe = safety.filter(u_nom, est)
 
         # Update supervisor with correct regressor [x, u] for PE monitoring
         regressor = np.concatenate([est.x_hat, u_safe])
-        sup_state = supervisor.update(est, regressor)
+        sup_state = supervisor.update(est, regressor, solver_events=events)
 
         # Update safety filter margin based on mode for next iteration
         if hasattr(safety, "set_margin_factor"):
@@ -181,6 +199,14 @@ def run_supervised_loop(
 
         sr = plant.step(u_safe)
         est = estimator.update(sr.y, u_safe)
+
+        # Check for estimator failure
+        if hasattr(estimator, "get_last_failure"):
+            est_event = estimator.get_last_failure()
+            if est_event is not None:
+                events.append(est_event)
+                # Report to supervisor for next iteration
+                supervisor.report_solver_failure(est_event)
 
         # Log
         log.t.append(t)
@@ -195,6 +221,9 @@ def run_supervised_loop(
         log.pe_lambda_min.append(sup_state.pe_status.lambda_min)
         log.uncertainty.append(sup_state.uncertainty_norm)
         log.safety_margin.append(sup_state.safety_margin_factor)
+
+        # Log any failures from this step
+        log.solver_failures.extend(events)
 
         t += dt
 

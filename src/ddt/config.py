@@ -11,11 +11,27 @@ from pydantic import BaseModel, Field
 
 class PlantConfig(BaseModel):
     type: str = Field(..., description="Plant type identifier.")
+    # Linear scalar plant parameters
     a_true: float | None = None
     b_true: float | None = None
-    process_noise_std: float = 0.0
-    meas_noise_std: float = 0.0
+    process_noise_std: float | list[float] = 0.0
+    meas_noise_std: float | list[float] = 0.0
     x0: float = 0.0
+
+    # CSTR plant parameters
+    V: float | None = None  # Volume [L]
+    rho: float | None = None  # Density [kg/L]
+    C_p: float | None = None  # Heat capacity [kJ/(kg*K)]
+    R_gas: float | None = None  # Gas constant [J/(mol*K)]
+    C_A0: float | None = None  # Feed concentration [mol/L]
+    T_0: float | None = None  # Feed temperature [K]
+    k_0_true: float | None = None  # Pre-exponential factor [1/s]
+    E_a_true: float | None = None  # Activation energy [J/mol]
+    dH_r_true: float | None = None  # Enthalpy of reaction [J/mol]
+    T_max: float | None = None  # Max temperature [K]
+    T_min: float | None = None  # Min temperature [K]
+    C_A_init: float | None = None  # Initial concentration [mol/L]
+    T_init: float | None = None  # Initial temperature [K]
 
 
 # =============================================================================
@@ -113,6 +129,20 @@ class NMPCConfig(BaseModel):
     max_iter: int = Field(default=50, description="Max solver iterations (1 for RTI).")
     rti_mode: bool = Field(default=True, description="Use RTI scheme for acados.")
 
+    # RTI timing configuration
+    enable_timing: bool = Field(default=True, description="Enable RTI timing monitoring.")
+    timing_budget_fraction: float = Field(
+        default=0.2, description="p95 timing budget as fraction of dt."
+    )
+
+    # Warm-start configuration
+    enable_warm_start_validation: bool = Field(
+        default=True, description="Enable warm-start validation."
+    )
+    max_warm_start_error: float = Field(
+        default=0.5, description="Max state continuity error for valid warm-start."
+    )
+
 
 # =============================================================================
 # Control Configuration
@@ -208,6 +238,22 @@ class SupervisionConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable supervision.")
     pe: PEConfig = Field(default_factory=PEConfig)
     mode: ModeConfig = Field(default_factory=ModeConfig)
+
+    # Failure handling
+    solver_failure_threshold: int = Field(
+        default=5, description="Consecutive failures before mode escalation."
+    )
+
+    # NIS-based uncertainty validation
+    enable_nis_validation: bool = Field(
+        default=True, description="Enable NIS-based uncertainty validation."
+    )
+    nis_high_threshold: float = Field(
+        default=2.0, description="NIS/ny threshold for optimistic covariance detection."
+    )
+    nis_low_threshold: float = Field(
+        default=0.3, description="NIS/ny threshold for pessimistic covariance detection."
+    )
 
 
 # =============================================================================

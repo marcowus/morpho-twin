@@ -8,7 +8,9 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from ...events import SolverFailureEvent
 from ...interfaces import Estimate, Estimator
+from ..innovation_monitor import InnovationMonitor, InnovationStats, UncertaintyValidation
 from .ekf_arrival import EKFArrivalCostUpdater
 
 if TYPE_CHECKING:
@@ -46,6 +48,9 @@ class MHEBase(ABC, Estimator):
     _theta_cov: np.ndarray = field(init=False)
     _initialized: bool = field(default=False, init=False)
     _ekf_updater: EKFArrivalCostUpdater | None = field(default=None, init=False)
+    _last_failure_event: SolverFailureEvent | None = field(default=None, init=False)
+    _innovation_monitor: InnovationMonitor | None = field(default=None, init=False)
+    _last_y_predicted: np.ndarray | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
         self._y_buffer = []
@@ -66,6 +71,14 @@ class MHEBase(ABC, Estimator):
                 R=R,
             )
 
+        # Initialize innovation monitor
+        R_diag = np.array(self.cfg.noise.R_diag, dtype=np.float64)
+        self._innovation_monitor = InnovationMonitor(
+            ny=self.ny,
+            window_size=min(50, self.cfg.horizon * 2),
+            R_diag=R_diag,
+        )
+
     def reset(self) -> None:
         """Reset estimator state."""
         self._y_buffer.clear()
@@ -74,8 +87,12 @@ class MHEBase(ABC, Estimator):
         self._theta_hat = np.array(self.cfg.parameters.theta_init, dtype=np.float64)
         self._theta_cov = np.diag(self.cfg.parameters.P_theta_diag).astype(np.float64)
         self._initialized = False
+        self._last_failure_event = None
+        self._last_y_predicted = None
         if self._ekf_updater is not None:
             self._ekf_updater.reset()
+        if self._innovation_monitor is not None:
+            self._innovation_monitor.reset()
 
     def update(self, y: np.ndarray, u_applied: np.ndarray) -> Estimate:
         """Update estimate with new measurement and applied input.
@@ -89,6 +106,10 @@ class MHEBase(ABC, Estimator):
         """
         y = np.atleast_1d(np.asarray(y, dtype=np.float64))
         u_applied = np.atleast_1d(np.asarray(u_applied, dtype=np.float64))
+
+        # Update innovation monitor with prediction from previous step
+        if self._innovation_monitor is not None and self._last_y_predicted is not None:
+            self._innovation_monitor.update(y, self._last_y_predicted)
 
         # Store in buffers
         self._y_buffer.append(y.copy())
@@ -104,6 +125,7 @@ class MHEBase(ABC, Estimator):
         # Need at least 2 measurements to estimate
         if len(self._y_buffer) < 2:
             x_hat = y.copy()
+            self._last_y_predicted = y.copy()  # Naive prediction
             return Estimate(
                 x_hat=x_hat,
                 theta_hat=self._theta_hat.copy(),
@@ -111,15 +133,21 @@ class MHEBase(ABC, Estimator):
             )
 
         # Solve MHE problem
-        x_opt, theta_opt, cov = self._solve_mhe()
+        x_opt, theta_opt, cov, failure_event = self._solve_mhe()
 
         self._x_traj = x_opt
         self._theta_hat = theta_opt
         self._theta_cov = cov
+        self._last_failure_event = failure_event
         self._initialized = True
 
         # Current state estimate is last element
         x_hat = x_opt[-1].copy()
+
+        # Store prediction for next innovation update
+        # For linear scalar model: y = x (direct measurement)
+        # For general models, this would need the output function h(x)
+        self._last_y_predicted = x_hat.copy()
 
         return Estimate(
             x_hat=x_hat,
@@ -127,14 +155,41 @@ class MHEBase(ABC, Estimator):
             theta_cov=self._theta_cov.copy(),
         )
 
+    def get_last_failure(self) -> SolverFailureEvent | None:
+        """Get the last failure event, if any."""
+        return self._last_failure_event
+
+    def get_innovation_stats(self) -> InnovationStats | None:
+        """Get current innovation monitoring statistics.
+
+        Returns:
+            InnovationStats if monitor is enabled, None otherwise
+        """
+        if self._innovation_monitor is not None:
+            return self._innovation_monitor.get_stats()
+        return None
+
+    def validate_uncertainty(self) -> UncertaintyValidation | None:
+        """Validate uncertainty estimate using NIS testing.
+
+        Returns:
+            UncertaintyValidation with recommended margin adjustment
+        """
+        if self._innovation_monitor is not None:
+            return self._innovation_monitor.validate_uncertainty()
+        return None
+
     @abstractmethod
-    def _solve_mhe(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _solve_mhe(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, SolverFailureEvent | None]:
         """Solve the MHE optimization problem.
 
         Returns:
             x_opt: Optimal state trajectory (N+1, nx)
             theta_opt: Optimal parameter estimate (ntheta,)
             cov: Parameter covariance estimate (ntheta, ntheta)
+            failure_event: Failure event if solver failed, None otherwise
         """
         ...
 

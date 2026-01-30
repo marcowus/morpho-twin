@@ -1,0 +1,114 @@
+# Morpho Twin CSTR Benchmark Demo
+# Nonlinear Continuously Stirred Tank Reactor with:
+# - Exothermic reaction A -> B
+# - Temperature constraints (runaway prevention)
+# - Parameter drift (catalyst degradation)
+
+seed: 42
+dt: 0.1
+horizon_steps: 20
+
+plant:
+  type: cstr
+  # Physical parameters (fixed)
+  V: 100.0  # Volume [L]
+  rho: 1.0  # Density [kg/L]
+  C_p: 4.18  # Heat capacity [kJ/(kg*K)]
+  R_gas: 8.314  # Gas constant [J/(mol*K)]
+  C_A0: 1.0  # Feed concentration [mol/L]
+  T_0: 300.0  # Feed temperature [K]
+
+  # Uncertain parameters (true values)
+  k_0_true: 7.2e10  # Pre-exponential factor [1/s]
+  E_a_true: 72750.0  # Activation energy [J/mol]
+  dH_r_true: -50000.0  # Enthalpy of reaction [J/mol]
+
+  # Constraints
+  T_max: 400.0  # Max temperature [K]
+  T_min: 280.0  # Min temperature [K]
+
+  # Noise
+  process_noise_std: [0.001, 0.5]  # [C_A, T]
+  meas_noise_std: [0.01, 1.0]  # [C_A, T]
+
+  # Initial conditions
+  C_A_init: 0.5  # [mol/L]
+  T_init: 320.0  # [K]
+
+estimation:
+  type: mhe
+  mhe:
+    horizon: 20
+    noise:
+      Q_diag: [0.001, 0.5]  # Process noise variance
+      R_diag: [0.01, 1.0]  # Measurement noise variance
+    parameters:
+      mode: static
+      # Initial guesses for [k_0, E_a, dH_r]
+      # Note: k_0 is very large, may need scaling
+      theta_init: [7.0e10, 70000.0, -45000.0]
+      P_theta_diag: [1.0e20, 1.0e8, 1.0e8]
+    solver:
+      backend: casadi
+      max_iter: 100
+      tol: 1.0e-6
+    arrival_cost_scaling: 1.0
+    use_ekf_arrival_cost: true
+
+control:
+  type: nmpc_casadi
+  # Input bounds: [q_min, q_max], [Q_c_min, Q_c_max]
+  u_min: [0.5, -1000.0]  # Min flow, max cooling
+  u_max: [2.0, 1000.0]  # Max flow, max heating
+  nmpc:
+    horizon: 20
+    # Cost weights: [C_A, T]
+    Q: [10.0, 1.0]  # Track concentration, temperature
+    R_u: [0.01, 0.0001]  # Light input penalty
+    lambda_info: 0.1  # Higher probing for PE
+    solver_backend: casadi
+    max_iter: 100
+    rti_mode: false
+
+safety:
+  type: cbf_qp
+  # State constraints: [C_A_min, C_A_max], [T_min, T_max]
+  x_min: [0.0, 280.0]  # C_A >= 0, T >= 280K
+  x_max: [2.0, 400.0]  # C_A <= 2, T <= 400K (runaway prevention)
+  cbf:
+    alpha: 0.3  # Less aggressive for nonlinear system
+    slack_weight: 1000.0
+    gamma_robust: 1.5  # Higher robust margin
+
+supervision:
+  enabled: true
+  pe:
+    window: 100
+    lambda_threshold: 0.05  # Tighter PE requirement
+    condition_threshold: 100.0
+  mode:
+    uncertainty_normal_to_conservative: 1.0e10  # Adjusted for parameter scale
+    uncertainty_conservative_to_safe: 5.0e10
+    uncertainty_safe_to_conservative: 3.0e10
+    uncertainty_conservative_to_normal: 0.5e10
+    pe_violation_count_conservative: 10
+    pe_violation_count_safe: 50
+    pe_satisfaction_count_recovery: 20
+    margin_factor_normal: 1.0
+    margin_factor_conservative: 2.0
+    margin_factor_safe: 5.0
+  # Failure handling
+  solver_failure_threshold: 5
+
+scenario:
+  steps: 500
+  reference:
+    type: setpoint_track
+    C_A_ref: 0.5  # Target concentration [mol/L]
+    T_ref: 350.0  # Target temperature [K]
+
+  # Parameter drift scenario (optional)
+  parameter_drift:
+    enabled: true
+    start_step: 200
+    k_0_decay_rate: 0.999  # 0.1% decay per step
