@@ -1,6 +1,6 @@
-from ddt.utils import load_config
 from ddt.factory import make_controller, make_estimator, make_plant, make_safety
 from ddt.runtime.simulate import run_closed_loop
+from ddt.utils import load_config
 
 
 def test_linear_demo_runs():

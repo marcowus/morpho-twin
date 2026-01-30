@@ -1,0 +1,55 @@
+# CBF-QP + Supervision demo config
+seed: 42
+dt: 0.1
+horizon_steps: 20
+
+plant:
+  type: linear_scalar
+  a_true: 1.02
+  b_true: 0.10
+  process_noise_std: 0.02
+  meas_noise_std: 0.03
+  x0: 0.0
+
+estimation:
+  type: windowed_ls
+  window: 50
+
+control:
+  type: pid
+  kp: 4.0
+  ki: 0.2
+  kd: 0.0
+  u_min: -2.0
+  u_max: 2.0
+
+safety:
+  type: cbf_qp
+  x_min: -1.0
+  x_max: 1.0
+  alpha: 0.5
+  slack_weight: 1000.0
+  cbf:
+    alpha: 0.5
+    slack_weight: 1000.0
+    gamma_robust: 1.0
+
+supervision:
+  enabled: true
+  pe:
+    window: 100
+    lambda_threshold: 0.1
+    condition_threshold: 100.0
+  mode:
+    uncertainty_normal_to_conservative: 1.0
+    uncertainty_conservative_to_safe: 5.0
+    margin_factor_normal: 1.0
+    margin_factor_conservative: 2.0
+    margin_factor_safe: 5.0
+
+scenario:
+  steps: 400
+  reference:
+    type: step
+    t_step: 5.0
+    value: 0.8

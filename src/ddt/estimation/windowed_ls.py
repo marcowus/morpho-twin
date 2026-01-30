@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from collections import deque
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -23,13 +23,15 @@ class WindowedLeastSquaresEstimator(Estimator):
     _xs: deque[float] = field(default_factory=deque, init=False)
     _us: deque[float] = field(default_factory=deque, init=False)
     _ys: deque[float] = field(default_factory=deque, init=False)
-    _theta: np.ndarray = field(default_factory=lambda: np.array([1.0, 0.0], dtype=float), init=False)
+    _theta: np.ndarray = field(
+        default_factory=lambda: np.array([1.0, 0.1], dtype=float), init=False
+    )
 
     def reset(self) -> None:
         self._xs.clear()
         self._us.clear()
         self._ys.clear()
-        self._theta = np.array([1.0, 0.0], dtype=float)
+        self._theta = np.array([1.0, 0.1], dtype=float)
 
     def update(self, y: np.ndarray, u_applied: np.ndarray) -> Estimate:
         y = float(np.asarray(y).reshape(()))
@@ -56,6 +58,10 @@ class WindowedLeastSquaresEstimator(Estimator):
             # regularized LS
             reg = 1e-6 * np.eye(2)
             theta = np.linalg.solve(Phi.T @ Phi + reg, Phi.T @ xkp1)
+            # Clamp to reasonable bounds to prevent instability
+            # a should be roughly 0.5 to 1.5, b should be positive and small
+            theta[0] = np.clip(theta[0], 0.5, 1.5)
+            theta[1] = np.clip(theta[1], 0.01, 1.0)
             self._theta = theta
             # covariance approx
             resid = xkp1 - Phi @ theta

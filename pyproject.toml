@@ -31,6 +31,7 @@ jax = [
 ]
 qp = [
   "osqp>=0.6.3",
+  "scipy>=1.10",
 ]
 acados = [
   "casadi>=3.6.5",
