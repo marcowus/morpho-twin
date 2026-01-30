@@ -55,8 +55,87 @@ class BarrierFunction(ABC):
 
 
 @dataclass
+class LowerBoundBarrier(BarrierFunction):
+    """Lower bound barrier: h(x) = x - x_min.
+
+    Enforces x >= x_min for a single state component.
+    """
+
+    x_min: np.ndarray
+    component: int = 0
+
+    def evaluate(self, x: np.ndarray) -> float:
+        """Evaluate h(x) = x_i - x_min_i."""
+        x = np.atleast_1d(x)
+        x_i = x[self.component] if len(x) > self.component else x[0]
+        return float(x_i - self.x_min[self.component])
+
+    def gradient(self, x: np.ndarray) -> np.ndarray:
+        """Gradient is +1 in the component direction."""
+        x = np.atleast_1d(x)
+        grad = np.zeros_like(x)
+        idx = self.component if len(x) > self.component else 0
+        grad[idx] = 1.0
+        return grad
+
+    def lie_derivatives(
+        self,
+        x: np.ndarray,
+        f: np.ndarray,
+        g: np.ndarray,
+    ) -> tuple[float, np.ndarray]:
+        """Compute Lie derivatives."""
+        grad = self.gradient(x)
+        Lf_h = float(np.dot(grad, f))
+        Lg_h = grad @ g
+        return Lf_h, Lg_h
+
+
+@dataclass
+class UpperBoundBarrier(BarrierFunction):
+    """Upper bound barrier: h(x) = x_max - x.
+
+    Enforces x <= x_max for a single state component.
+    """
+
+    x_max: np.ndarray
+    component: int = 0
+
+    def evaluate(self, x: np.ndarray) -> float:
+        """Evaluate h(x) = x_max_i - x_i."""
+        x = np.atleast_1d(x)
+        x_i = x[self.component] if len(x) > self.component else x[0]
+        return float(self.x_max[self.component] - x_i)
+
+    def gradient(self, x: np.ndarray) -> np.ndarray:
+        """Gradient is -1 in the component direction."""
+        x = np.atleast_1d(x)
+        grad = np.zeros_like(x)
+        idx = self.component if len(x) > self.component else 0
+        grad[idx] = -1.0
+        return grad
+
+    def lie_derivatives(
+        self,
+        x: np.ndarray,
+        f: np.ndarray,
+        g: np.ndarray,
+    ) -> tuple[float, np.ndarray]:
+        """Compute Lie derivatives."""
+        grad = self.gradient(x)
+        Lf_h = float(np.dot(grad, f))
+        Lg_h = grad @ g
+        return Lf_h, Lg_h
+
+
+@dataclass
 class BoxBarrier(BarrierFunction):
     """Box constraint barrier: x_min <= x <= x_max.
+
+    NOTE: This class returns min(h_low, h_high) which only generates
+    one constraint for the closer bound. For proper CBF-QP safety,
+    use create_box_barriers() which creates separate LowerBoundBarrier
+    and UpperBoundBarrier instances for each dimension.
 
     Implements separate barriers for lower and upper bounds:
         h_low(x) = x - x_min
@@ -209,22 +288,24 @@ def create_box_barriers(
 ) -> CompositeBarrier:
     """Create composite barrier for box constraints.
 
-    Creates one barrier per state component for both lower
-    and upper bounds.
+    Creates TWO barriers per state component: one for the lower bound
+    and one for the upper bound. This ensures both bounds are enforced
+    as separate CBF constraints in the QP.
 
     Args:
         x_min: Lower bounds (nx,)
         x_max: Upper bounds (nx,)
 
     Returns:
-        CompositeBarrier with all box constraints
+        CompositeBarrier with 2*nx box constraints
     """
     x_min = np.atleast_1d(x_min)
     x_max = np.atleast_1d(x_max)
     nx = len(x_min)
 
-    barriers = []
+    barriers: list[BarrierFunction] = []
     for i in range(nx):
-        barriers.append(BoxBarrier(x_min=x_min, x_max=x_max, component=i))
+        barriers.append(LowerBoundBarrier(x_min=x_min, component=i))
+        barriers.append(UpperBoundBarrier(x_max=x_max, component=i))
 
     return CompositeBarrier(barriers=barriers)

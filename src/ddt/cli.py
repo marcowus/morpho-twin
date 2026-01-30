@@ -7,9 +7,9 @@ import numpy as np
 import typer
 from rich import print as rprint
 
-from .factory import make_controller, make_estimator, make_plant, make_safety
+from .factory import make_controller, make_estimator, make_plant, make_safety, make_supervisor
 from .metrics import compute_metrics
-from .runtime.simulate import run_closed_loop
+from .runtime.simulate import SimulationLog, run_closed_loop, run_supervised_loop
 from .utils import load_config
 
 app = typer.Typer(help="Morpho Twin CLI — adaptive digital twin framework.")
@@ -23,16 +23,30 @@ def simulate(config: str = typer.Option(..., help="Path to YAML config.")) -> No
     estimator = make_estimator(cfg)
     controller = make_controller(cfg)
     safety = make_safety(cfg)
+    supervisor = make_supervisor(cfg)
 
-    log = run_closed_loop(
-        plant=plant,
-        estimator=estimator,
-        controller=controller,
-        safety=safety,
-        steps=cfg.scenario.steps,
-        dt=cfg.dt,
-        reference_cfg=cfg.scenario.reference.model_dump(),
-    )
+    if supervisor is not None:
+        supervised_log = run_supervised_loop(
+            plant=plant,
+            estimator=estimator,
+            controller=controller,
+            safety=safety,
+            supervisor=supervisor,
+            steps=cfg.scenario.steps,
+            dt=cfg.dt,
+            reference_cfg=cfg.scenario.reference.model_dump(),
+        )
+        log: SimulationLog = supervised_log
+    else:
+        log = run_closed_loop(
+            plant=plant,
+            estimator=estimator,
+            controller=controller,
+            safety=safety,
+            steps=cfg.scenario.steps,
+            dt=cfg.dt,
+            reference_cfg=cfg.scenario.reference.model_dump(),
+        )
 
     y = np.array(log.y, dtype=float)
     ref = np.array(log.ref, dtype=float)

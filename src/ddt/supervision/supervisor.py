@@ -83,7 +83,16 @@ class Supervisor:
 
         # Update PE monitor
         if regressor is None:
-            # Default regressor for linear scalar system
+            # Default regressor for linear scalar system (suboptimal - uses [x, 1])
+            # For proper PE monitoring, pass regressor=[x_hat, u_safe] explicitly
+            import warnings
+
+            warnings.warn(
+                "No regressor provided to supervisor. Using [x, 1] which does not "
+                "properly monitor control excitation. Pass regressor=[x_hat, u_safe] "
+                "for correct PE monitoring.",
+                stacklevel=2,
+            )
             x = np.atleast_1d(estimate.x_hat)
             regressor = np.concatenate([x, np.ones(1)])
 

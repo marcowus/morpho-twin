@@ -65,18 +65,44 @@ def test_composite_barrier():
 
 def test_create_box_barriers():
     """Test factory function for box barriers."""
-    from ddt.safety.barriers import create_box_barriers
+    from ddt.safety.barriers import LowerBoundBarrier, UpperBoundBarrier, create_box_barriers
 
     composite = create_box_barriers(
         x_min=np.array([-1.0]),
         x_max=np.array([1.0]),
     )
 
-    # Should create composite with barrier for each dimension
-    assert len(composite.barriers) == 1
+    # Should create 2 barriers per dimension (one lower, one upper)
+    assert len(composite.barriers) == 2
+
+    # Verify barrier types
+    assert isinstance(composite.barriers[0], LowerBoundBarrier)
+    assert isinstance(composite.barriers[1], UpperBoundBarrier)
 
     # Should be safe at origin
     assert composite.evaluate(np.array([0.0])) > 0
+
+
+def test_box_barriers_enforce_both_bounds():
+    """Verify both lower and upper bounds generate separate constraints."""
+    from ddt.safety.barriers import create_box_barriers
+
+    composite = create_box_barriers(x_min=np.array([-1.0]), x_max=np.array([1.0]))
+
+    x = np.array([0.0])
+    f = np.array([0.1])
+    g = np.array([[1.0]])
+    alpha = 0.5
+
+    # Get all constraints - should have 2 (one per bound)
+    constraints = composite.get_all_constraints(x, f, g, alpha)
+    assert len(constraints) == 2
+
+    # Each constraint should have different gradients (opposite signs)
+    _, Lg_h_lower, _ = constraints[0]
+    _, Lg_h_upper, _ = constraints[1]
+    assert Lg_h_lower[0] > 0  # Lower bound gradient is positive
+    assert Lg_h_upper[0] < 0  # Upper bound gradient is negative
 
 
 def test_box_barrier_lie_derivatives():

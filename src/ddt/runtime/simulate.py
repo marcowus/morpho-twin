@@ -160,15 +160,7 @@ def run_supervised_loop(
     for _k in range(steps):
         r = step_reference_fn(reference_cfg, t)
 
-        # Update supervisor
-        regressor = np.concatenate([est.x_hat, np.ones(1)])
-        sup_state = supervisor.update(est, regressor)
-
-        # Update safety filter margin based on mode
-        if hasattr(safety, "set_margin_factor"):
-            safety.set_margin_factor(sup_state.safety_margin_factor)
-
-        # Check if safe to operate
+        # Compute control
         if not supervisor.is_safe_to_operate():
             # SAFE_STOP mode: apply zero control
             u_nom = supervisor.get_zero_control(1)
@@ -178,6 +170,14 @@ def run_supervised_loop(
             # Normal operation
             u_nom = controller.compute_u(np.array([r]), est)
             u_safe = safety.filter(u_nom, est)
+
+        # Update supervisor with correct regressor [x, u] for PE monitoring
+        regressor = np.concatenate([est.x_hat, u_safe])
+        sup_state = supervisor.update(est, regressor)
+
+        # Update safety filter margin based on mode for next iteration
+        if hasattr(safety, "set_margin_factor"):
+            safety.set_margin_factor(sup_state.safety_margin_factor)
 
         sr = plant.step(u_safe)
         est = estimator.update(sr.y, u_safe)

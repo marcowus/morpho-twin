@@ -53,7 +53,8 @@ class WindowedLeastSquaresEstimator(Estimator):
             us = np.array(self._us, dtype=float)
             xk = ys[:-1]
             xkp1 = ys[1:]
-            uk = us[:-1]
+            # Skip dummy input at index 0, align u_k with x_k
+            uk = us[1:]
             Phi = np.stack([xk, uk], axis=1)  # [N,2]
             # regularized LS
             reg = 1e-6 * np.eye(2)
