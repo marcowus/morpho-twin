@@ -22,16 +22,21 @@ def make_plant(cfg: AppConfig) -> Plant:
     """Create plant from configuration."""
     if cfg.plant.type == "linear_scalar":
         assert cfg.plant.a_true is not None and cfg.plant.b_true is not None
-        plant = LinearScalarPlant(
+        # Convert noise std to float (config allows float | list[float])
+        proc_noise = cfg.plant.process_noise_std
+        meas_noise = cfg.plant.meas_noise_std
+        proc_noise_val = proc_noise[0] if isinstance(proc_noise, list) else proc_noise
+        meas_noise_val = meas_noise[0] if isinstance(meas_noise, list) else meas_noise
+        linear_plant = LinearScalarPlant(
             dt=cfg.dt,
             a_true=cfg.plant.a_true,
             b_true=cfg.plant.b_true,
-            process_noise_std=cfg.plant.process_noise_std,
-            meas_noise_std=cfg.plant.meas_noise_std,
+            process_noise_std=proc_noise_val,
+            meas_noise_std=meas_noise_val,
             x0=cfg.plant.x0,
         )
-        plant.seed(cfg.seed)
-        return plant
+        linear_plant.seed(cfg.seed)
+        return linear_plant
 
     elif cfg.plant.type == "cstr":
         # CSTR plant with optional parameter overrides

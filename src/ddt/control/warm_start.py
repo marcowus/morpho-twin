@@ -6,6 +6,7 @@ NMPC solvers between time steps.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import numpy as np
@@ -163,7 +164,7 @@ class WarmStartManager:
         self,
         x_traj: np.ndarray,
         u_traj: np.ndarray,
-        dynamics_fn: callable | None = None,
+        dynamics_fn: Callable[..., np.ndarray] | None = None,
         theta: np.ndarray | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Extrapolate terminal state and input for shifted trajectory.

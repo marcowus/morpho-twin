@@ -177,7 +177,7 @@ class CSTRPlant(Plant):
 
         k(T) = k_0 * exp(-E_a / (R*T))
         """
-        return self.k_0_true * np.exp(-self.E_a_true / (self.R_gas * T))
+        return float(self.k_0_true * np.exp(-self.E_a_true / (self.R_gas * T)))
 
     def get_true_parameters(self) -> np.ndarray:
         """Get true parameter values for estimation testing."""
@@ -201,7 +201,7 @@ class CSTRPlant(Plant):
             True if T <= T_max - margin and T >= T_min + margin
         """
         T = self._x[1]
-        return (T <= self.T_max - margin) and (T >= self.T_min + margin)
+        return bool((T <= self.T_max - margin) and (T >= self.T_min + margin))
 
     def get_constraint_violation(self) -> tuple[bool, float]:
         """Check constraint violation.
