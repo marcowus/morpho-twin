@@ -42,6 +42,7 @@ morpho --config configs/nmpc_demo.yaml     # NMPC/RTI
 ## Architecture
 
 ```mermaid
+%%{init: {'flowchart': {'curve': 'basis'}}}%%
 flowchart LR
     subgraph Main Control Loop
         Plant["🏭 Plant"] -->|y| MHE["📊 MHE<br/>Estimator"]
