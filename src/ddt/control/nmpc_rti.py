@@ -220,7 +220,7 @@ class RTINMPC(NMPCBase):
             self._last_failure_event = SolverFailureEvent(
                 component=ComponentType.NMPC_RTI,
                 severity=FailureSeverity.WARNING,
-                message=f"RTI-NMPC feedback failed after {self._consecutive_failures} consecutive failures",
+                message=f"RTI-NMPC feedback failed after {self._consecutive_failures} failures",
                 fallback_action="use_previous_trajectory",
             )
 

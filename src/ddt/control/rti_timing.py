@@ -167,7 +167,9 @@ class RTITimingMonitor:
             prepare_mean_ms=float(np.mean(prepare_arr)) if len(prepare_arr) > 0 else 0.0,
             prepare_p95_ms=float(np.percentile(prepare_arr, 95)) if len(prepare_arr) > 0 else 0.0,
             feedback_mean_ms=float(np.mean(feedback_arr)) if len(feedback_arr) > 0 else 0.0,
-            feedback_p95_ms=float(np.percentile(feedback_arr, 95)) if len(feedback_arr) > 0 else 0.0,
+            feedback_p95_ms=(
+                float(np.percentile(feedback_arr, 95)) if len(feedback_arr) > 0 else 0.0
+            ),
             total_mean_ms=float(np.mean(total_arr)),
             total_p95_ms=p95_total,
             is_within_budget=p95_total < self.budget_ms,

@@ -10,25 +10,19 @@ potentially "cheat" by modifying parameters to achieve better performance.
 
 from __future__ import annotations
 
+import importlib.util
+
 import numpy as np
 import pytest
 
-
 # Check for optional dependencies
-try:
+HAS_CASADI = importlib.util.find_spec("casadi") is not None
+ACADOS_AVAILABLE = importlib.util.find_spec("acados_template") is not None
+
+if HAS_CASADI:
     import casadi as ca
-
-    HAS_CASADI = True
-except ImportError:
-    HAS_CASADI = False
+else:
     ca = None  # type: ignore[assignment]
-
-try:
-    from acados_template import AcadosOcpSolver
-
-    ACADOS_AVAILABLE = True
-except ImportError:
-    ACADOS_AVAILABLE = False
 
 
 def _build_test_dynamics():

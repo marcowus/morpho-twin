@@ -284,7 +284,7 @@ class CBFQPSafetyFilter(SafetyFilter):
             event = SolverFailureEvent(
                 component=ComponentType.CBF_QP,
                 severity=FailureSeverity.CRITICAL,
-                message=f"CBF-QP infeasible after {self._consecutive_failures} consecutive failures",
+                message=f"CBF-QP infeasible after {self._consecutive_failures} failures",
                 solver_status=str(result.info.status),
                 fallback_action="clamp_to_bounds",
                 iteration_count=int(result.info.iter) if result.info.iter else None,

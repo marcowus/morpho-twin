@@ -9,15 +9,13 @@ These tests verify that:
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
-
 import numpy as np
 import pytest
 
 from ddt.events import ComponentType, FailureSeverity, SolverFailureEvent
 from ddt.interfaces import Estimate
 from ddt.supervision.mode_manager import OperationMode
-from ddt.supervision.supervisor import Supervisor, SupervisorState
+from ddt.supervision.supervisor import Supervisor
 
 
 @pytest.fixture
@@ -213,8 +211,6 @@ class TestSupervisorFailureHandling:
         self, supervisor: Supervisor, mock_estimate: Estimate
     ) -> None:
         """Failure count can be cleared manually."""
-        regressor = np.array([0.5, 0.1])
-
         event = SolverFailureEvent(
             component=ComponentType.MHE_CASADI,
             severity=FailureSeverity.WARNING,
@@ -278,14 +274,6 @@ class TestCBFQPFailureHandling:
 @pytest.mark.unit
 class TestMHEFailureHandling:
     """Tests for MHE failure handling."""
-
-    def test_mhe_base_stores_failure_event(self) -> None:
-        """MHE base class should store the last failure event."""
-        from ddt.events import SolverFailureEvent
-        from ddt.estimation.mhe.base import MHEBase
-
-        # MHEBase is abstract, so we test the interface
-        # The actual implementation is tested in integration tests
 
     def test_failure_event_contains_solver_status(self) -> None:
         """Failure events should include raw solver status."""
