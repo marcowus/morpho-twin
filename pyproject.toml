@@ -3,9 +3,9 @@ requires = ["hatchling>=1.24.0"]
 build-backend = "hatchling.build"
 
 [project]
-name = "ddt"
+name = "morpho-twin"
 version = "0.1.0"
-description = "Scaffold for causally-correct differentiable digital twins (MHE + dual-control NMPC + CBF safety)."
+description = "Adaptive digital twin framework with Moving Horizon Estimation, dual-control NMPC, and CBF safety filtering."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -40,7 +40,10 @@ acados = [
 ]
 
 [project.scripts]
-ddt = "ddt.cli:app"
+morpho = "ddt.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ddt"]
 
 [tool.ruff]
 line-length = 100

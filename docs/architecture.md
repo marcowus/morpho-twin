@@ -1,10 +1,37 @@
-# Architecture (DDT Blueprint v2 — scaffold)
+# Architecture
 
-This doc is intentionally concise; the full blueprint is provided in the ChatGPT response that generated this repository scaffold.
+Morpho Twin is a modular framework for adaptive control with safety guarantees.
 
-Key modules:
-- `ddt.estimation`: moving-horizon estimation & parameter uncertainty
-- `ddt.control`: nominal NMPC (RTI) + dual-control (FIM) objective terms
-- `ddt.safety`: CBF-QP safety filters & mode manager
-- `ddt.runtime`: orchestration loop, profiling, logging
-- `ddt.baselines`: PID / LQR / baseline MPC
+## Core Modules
+
+| Module | Purpose |
+|--------|---------|
+| `ddt.estimation` | Moving Horizon Estimation, parameter uncertainty tracking |
+| `ddt.control` | NMPC/RTI with dual-control (FIM) objective |
+| `ddt.safety` | CBF-QP safety filters, barrier functions, robust margins |
+| `ddt.supervision` | PE monitoring, mode management |
+| `ddt.runtime` | Orchestration loop, profiling, logging |
+| `ddt.baselines` | PID, LQR, baseline MPC |
+
+## Data Flow
+
+```
+Plant → y → MHE → (θ̂, Σ_θ) → NMPC → u_nom → CBF-QP → u_safe → Plant
+                      ↓                         ↑
+                Supervision ──────────────────────
+                (PE monitor, mode manager)
+```
+
+## Key Interfaces
+
+- `Estimator` — Updates parameter estimates from measurements
+- `Controller` — Computes nominal control from state and parameters
+- `SafetyFilter` — Projects nominal control to safe set
+- `Supervisor` — Monitors system health and adapts safety margins
+
+## Solver Backends
+
+- **CasADi + IPOPT** — Default, pure Python installation
+- **acados + HPIPM** — Production, requires separate installation
+
+See `docs/acados.md` for acados setup instructions.

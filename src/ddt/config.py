@@ -1,4 +1,4 @@
-"""Configuration dataclasses for DDT system."""
+"""Configuration dataclasses for Morpho Twin."""
 
 from __future__ import annotations
 
@@ -224,7 +224,7 @@ class ScenarioConfig(BaseModel):
 
 
 class AppConfig(BaseModel):
-    """Top-level DDT application configuration."""
+    """Top-level Morpho Twin application configuration."""
 
     seed: int = 0
     dt: float = 0.1

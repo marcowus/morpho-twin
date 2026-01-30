@@ -26,7 +26,7 @@ class SupervisorState:
 
 @dataclass
 class Supervisor:
-    """Unified supervisor for DDT system.
+    """Unified supervisor for Morpho Twin system.
 
     Integrates:
     - PE monitoring for parameter identifiability

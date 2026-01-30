@@ -10,7 +10,7 @@ import numpy as np
 # Re-export supervision types for convenience
 # (actual implementations are in supervision module)
 class OperationMode(Enum):
-    """Operating modes for the DDT system."""
+    """Operating modes for the Morpho Twin system."""
 
     NORMAL = auto()
     CONSERVATIVE = auto()

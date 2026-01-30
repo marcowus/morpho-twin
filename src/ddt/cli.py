@@ -12,7 +12,7 @@ from .metrics import compute_metrics
 from .runtime.simulate import run_closed_loop
 from .utils import load_config
 
-app = typer.Typer(help="Differentiable Digital Twins scaffold CLI.")
+app = typer.Typer(help="Morpho Twin CLI — adaptive digital twin framework.")
 
 
 @app.command()
@@ -41,7 +41,7 @@ def simulate(config: str = typer.Option(..., help="Path to YAML config.")) -> No
     rprint("[bold]Metrics[/bold]")
     rprint(m)
 
-    out_dir = Path(".ddt_logs")
+    out_dir = Path(".morpho_logs")
     out_dir.mkdir(exist_ok=True)
     out_path = out_dir / "last_run.json"
     out_path.write_text(json.dumps(log.__dict__, indent=2))

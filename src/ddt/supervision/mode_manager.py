@@ -7,7 +7,7 @@ from enum import Enum, auto
 
 
 class OperationMode(Enum):
-    """Operating modes for the DDT system."""
+    """Operating modes for the Morpho Twin system."""
 
     NORMAL = auto()  # Standard operation
     CONSERVATIVE = auto()  # Increased safety margins

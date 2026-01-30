@@ -1,4 +1,4 @@
-"""Simulation runtime for DDT closed-loop control."""
+"""Simulation runtime for Morpho Twin closed-loop control."""
 
 from __future__ import annotations
 

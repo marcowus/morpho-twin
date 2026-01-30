@@ -1,4 +1,4 @@
-"""Factory functions for creating DDT components."""
+"""Factory functions for creating Morpho Twin components."""
 
 from __future__ import annotations
 

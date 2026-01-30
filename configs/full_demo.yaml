@@ -1,4 +1,4 @@
-# Full DDT demo: MHE + NMPC + CBF + Supervision
+# Morpho Twin full demo: MHE + NMPC + CBF + Supervision
 seed: 42
 dt: 0.1
 horizon_steps: 20
